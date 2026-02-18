@@ -1,0 +1,485 @@
+
+# `flp_batch_all_in_one_n1.py` — Fully-resumable FLP capacity calculator from Voronoi void network (Zeo++) + base geometry (ASE)
+
+## What this script does (one sentence)
+
+For every optimized COF CIF in `COF_CIFs/`, this script **constructs/reads the Voronoi void network (`.nt2`)** and computes **FLP pocket “capacity” metrics** (per acid size) by evaluating (i) **base→pocket distance**, (ii) **lone-pair orientation**, and (iii) **CO₂/H₂ accessibility** from the void network; it writes **summary, site table, and visualization JSON** for each COF and is safe to stop/restart anytime. 
+
+---
+
+## Inputs required
+
+### Folder structure
+
+* `ROOT_DIR = "COF_CIFs"`
+* Script scans **subfolders** under `COF_CIFs/` that contain a `.cif` file.
+
+Expected per-COF folder:
+
+```
+COF_CIFs/
+└─ COF_XXXXXX/
+   ├─ COF_XXXXXX.cif
+   └─ (optional) COF_XXXXXX.nt2   # created if missing
+```
+
+### External dependency
+
+* **Zeo++ `network`** executable must be available in PATH.
+* Script calls:
+
+  * `network -nt2 <cif>` (only if `.nt2` missing)
+
+### Python dependencies
+
+* `numpy`
+* `ase` (ASE read of CIF)
+* `tqdm` optional (progress bar)
+
+---
+
+## User settings (tunable physical/algorithm parameters)
+
+### Parallelism
+
+* `MAX_WORKERS = 48` — number of COFs processed in parallel using `ProcessPoolExecutor`.
+
+### Acid sizes (probe radii)
+
+```python
+ACID_SIZES = {"small":2.2, "medium":3.8, "large":4.5}
+```
+
+These radii (Å) define the “acid sphere” used to decide which void nodes qualify as acid pockets.
+
+### Pocket/geometry thresholds
+
+* `DEFAULT_CLEARANCE = 1.5`
+  Additional clearance added to the acid radius when selecting viable void nodes:
+
+rnode​≥racid​+clearance 
+
+
+* `DEFAULT_D_MIN = 2.0`, `DEFAULT_D_MAX = 5.0`
+  Distance window for productive FLP separation (see distance score below).
+* `DEFAULT_THETA_MAX = 75.0` (degrees)
+  Maximum allowed misalignment between the base lone-pair direction and the base→pocket direction.
+* `DEFAULT_R_CO2 = 1.65`, `DEFAULT_R_H2 = 1.20`
+  Probe radii used to define accessibility nodes for CO₂ and H₂.
+* `DEFAULT_LAMBDA_CO2 = 3.0`, `DEFAULT_LAMBDA_H2 = 3.0`
+  Decay lengths (Å) used in accessibility scoring.
+* `DEFAULT_POCKET_BUF = 0.7`
+  Pocket radius used for overlap checking in simultaneous selection:
+  
+  rpocket ​= racid​+0.7
+
+All logic below uses these constants directly. 
+
+---
+
+## Core data structures
+
+### Voronoi node (void-network vertex)
+
+```python
+VoronoiNode(idx, pos[3], radius)
+```
+
+Loaded from `.nt2` (Zeo++ output). Only nodes with `radius > 0` are retained. 
+
+### FLP site (a base N paired to a pocket)
+
+```python
+FLPSite(
+  base_index,
+  base_pos,
+  pocket_center,
+  pocket_radius,
+  Q,
+  d_flp,
+  theta_deg
+)
+```
+
+Computed per base atom and per acid size. 
+
+---
+
+# A. Voronoi void-network handling (`.nt2`)
+
+## 1) Generating the network (only if missing)
+
+For each COF folder:
+
+* Identify the CIF: first file ending with `.cif`
+* Define `.nt2` path: `<cof>.nt2` (same basename as CIF)
+* If `.nt2` does not exist, run:
+
+```bash
+network -nt2 COF_XXXXXX.cif
+```
+
+in that folder. 
+
+## 2) Parsing `.nt2` into nodes
+
+`read_nt2_nodes(path)` reads `.nt2` line-by-line and skips:
+
+* empty lines
+* header lines beginning with “Vertex”
+* lines containing `#`, `->`, or “table”
+
+For the remaining lines it attempts to parse:
+
+```
+idx  x  y  z  r
+```
+
+and stores a node if `r > 0`. 
+
+---
+
+# B. Base detection and lone-pair direction (from CIF geometry)
+
+## Base atoms
+
+The script defines “Lewis base sites” as **all nitrogen atoms**:
+
+```python
+detect_base(atoms) = indices where chemical symbol == "N"
+```
+
+So:
+
+* `N_base_FLP` counts are counts of N atoms that successfully generate an FLP site under the scoring rules (not simply total N atoms). 
+
+## Lone pair direction approximation
+
+`lone_pair_direction(atoms, i, cut=2.2)`:
+
+1. Get N atom position `b`.
+2. Find neighbor atoms within distance window:
+
+* `0.6 < dist < 2.2 Å`
+
+3. Build unit vectors along each N→neighbor “bond”.
+4. Sum bond direction vectors and reverse:
+ 
+[
+   \vec{v} = -\sum_k \hat{u}_k
+   ]
+5. Normalize `v` to unit length.
+
+Interpretation:
+
+* This approximates the lone-pair direction as opposite the net bonding direction (standard heuristic for amines and similar N sites). 
+
+---
+
+# C. FLP site scoring model (the “capacity” definition)
+
+For each acid radius (r_\text{acid}), the script computes FLP sites as follows.
+
+## 1) Define eligible void nodes
+
+Let `nodes` be all Voronoi nodes.
+
+* Acid-pocket eligible nodes:
+acid_nodes={n:n.r≥racid​+clearance} 
+* CO₂ accessible node set:
+co2_nodes={n:n.r≥rCO2​}
+* H₂ accessible node set:
+h2_nodes={n:n.r≥rH2​}
+
+If `acid_nodes` is empty → return no sites (capacity = 0). 
+
+
+```
+
+---
+
+# FLP Capacity Calculation from Voronoi Void Network
+
+## Overview
+
+This module computes the **Frustrated Lewis Pair (FLP) capacity** of optimized COFs using the Voronoi void network generated by Zeo++.
+
+For each COF:
+
+1. The Voronoi network (`.nt2`) is generated (if missing).
+2. Nitrogen atoms are identified as Lewis base sites.
+3. Accessible acid pocket centers are identified from Voronoi nodes.
+4. Each base–pocket pair is scored using geometric and accessibility criteria.
+5. Simultaneous (non-overlapping) FLP capacity is computed.
+
+---
+
+# 1. Effective FLP Separation
+
+For a nitrogen base located at position $\mathbf{b}$ and a candidate pocket center at $\mathbf{p}$, the effective FLP separation is defined as:
+
+$$
+d_{\text{flp}} = |\mathbf{p} - \mathbf{b}| - r_{\text{acid}}
+$$
+
+where:
+
+* $\mathbf{b}$ = base nitrogen position
+* $\mathbf{p}$ = pocket center (Voronoi node)
+* $r_{\text{acid}}$ = probe acid radius
+
+This represents the base-to-acid surface distance.
+
+---
+
+# 2. Distance Score
+
+The separation window is defined by $d_{\min}$ and $d_{\max}$.
+
+The distance score is:
+
+$$
+f_d =
+\begin{cases}
+0, & d < d_{\min} \
+1, & d_{\min} \le d \le d_{\max} \
+\exp(-(d - d_{\max})), & d > d_{\max}
+\end{cases}
+$$
+
+Interpretation:
+
+* Too close → steric clash → rejected
+* Optimal window → ideal FLP geometry
+* Too far → exponentially penalized
+
+---
+
+# 3. Lone Pair Orientation Score
+
+The lone pair direction $\hat{\ell}$ is approximated as the reverse of the sum of N–bond vectors.
+
+The direction toward the pocket is:
+
+$$
+\hat{v} = \frac{\mathbf{p} - \mathbf{b}}{|\mathbf{p} - \mathbf{b}|}
+$$
+
+The angle between lone pair and pocket direction is:
+
+$$
+\theta = \cos^{-1}(\hat{\ell} \cdot \hat{v})
+$$
+
+Orientation score:
+
+$$
+f_o =
+\begin{cases}
+0, & \theta > \theta_{\max} \
+\cos^2(\theta), & \theta \le \theta_{\max}
+\end{cases}
+$$
+
+This enforces directional alignment of the base lone pair toward the acid site.
+
+---
+
+# 4. Accessibility Scores
+
+Accessibility is evaluated for both CO$_2$ and H$_2$.
+
+For each gas:
+
+$$
+f = \exp\left(-\frac{d_{\min}}{\lambda}\right)
+$$
+
+where:
+
+* $d_{\min}$ = minimum distance between pocket center and accessible void nodes
+* $\lambda$ = decay parameter
+
+If either CO$_2$ or H$_2$ accessibility is zero, the site is rejected.
+
+---
+
+# 5. Final FLP Quality Score
+
+The overall FLP site quality is defined multiplicatively:
+
+$$
+Q = f_d \times f_o \times f_{\text{CO2}} \times f_{\text{H2}}
+$$
+
+This ensures all conditions must be simultaneously satisfied.
+
+---
+
+# 6. Simultaneous FLP Capacity
+
+Multiple FLP sites may geometrically overlap.
+To determine the simultaneous FLP capacity, a greedy non-overlapping selection is performed.
+
+Two pocket spheres $i$ and $j$ are considered overlapping if:
+
+$$
+|\mathbf{p}_i - \mathbf{p}_j| < r_i + r_j
+$$
+
+where:
+
+$$
+r_i = r_{\text{acid}} + \text{buffer}
+$$
+
+Sites are sorted by decreasing $Q$ and selected only if they do not overlap previously chosen pockets.
+
+---
+
+# 7. Reported FLP Metrics
+
+For each COF and acid size, the following metrics are reported:
+
+### Total FLP Sites
+
+$$
+N_{\text{base_FLP}} = \text{number of accepted sites}
+$$
+
+### Total FLP Capacity
+
+$$
+C_{\text{FLP}} = \sum Q_i
+$$
+
+### Simultaneous FLP Sites
+
+$$
+N_{\text{base_FLP_sim}} = \text{number of non-overlapping sites}
+$$
+
+### Simultaneous FLP Capacity
+
+$$
+C_{\text{FLP_sim}} = \sum Q_i \quad \text{(non-overlapping subset)}
+$$
+
+---
+
+# 8. Physical Interpretation
+
+* $N_{\text{base_FLP}}$ → how many base sites can potentially form FLPs
+* $C_{\text{FLP}}$ → cumulative geometric–accessibility quality
+* $N_{\text{base_FLP_sim}}$ → maximum independent FLP sites
+* $C_{\text{FLP_sim}}$ → realistic simultaneous catalytic capacity
+
+This provides a quantitative framework for ranking COFs for in-situ FLP formation.
+
+---
+
+---
+
+# F. Resumability logic (key engineering feature)
+
+For each COF and each radius tag, the script checks if all outputs already exist:
+
+### Expected outputs per radius tag
+
+* `<cof>_FLP_<tag>_summary.txt`
+* `<cof>_FLP_<tag>_sites.csv`
+* `<cof>_FLP_visual_pockets_<tag>.json`
+
+If all three exist → it prints `[SKIP]` and does not recompute.
+Thus you can stop/restart safely without losing completed work. 
+
+---
+
+# G. Output files (per COF per acid size)
+
+All outputs are written **inside the same COF folder** under `COF_CIFs/COF_XXXXXX/`.
+
+## 1) Summary text
+
+`COF_XXXXXX_FLP_<tag>_summary.txt` contains:
+
+* `N_base_FLP`
+* `C_FLP`
+* `N_base_FLP_sim`
+* `C_FLP_sim`
+
+## 2) Site table
+
+`COF_XXXXXX_FLP_<tag>_sites.csv` has header:
+
+```
+N,d_flp,theta,Q,category,x,y,z
+```
+
+and rows per site include:
+
+* N index (1-based)
+* `d_flp`, `theta`, `Q`
+* pocket center coordinates
+
+*(Note: the script writes `category` in header but the row string does not explicitly output a category label; it directly prints coordinates. If you want the CSV to match the header exactly, we can fix this formatting.)* 
+
+## 3) Visualization JSON
+
+`COF_XXXXXX_FLP_visual_pockets_<tag>.json` format:
+
+```json
+{
+  "simultaneous_flp_sites": [
+    {"N_index": 12, "x":..., "y":..., "z":..., "radius":..., "Q":...}
+  ]
+}
+```
+
+This is intended for downstream pocket visualization. 
+
+---
+
+# H. Execution model (batch processing)
+
+The script builds a list of all COF folders under `ROOT_DIR` that contain a `.cif`, then processes them in parallel:
+
+```python
+with ProcessPoolExecutor(max_workers=MAX_WORKERS):
+    futures = submit(run_one, folder)
+```
+
+It prints a final summary:
+
+```
+COF_XXXXX → OK / FAILED — <error>
+```
+
+If `tqdm` is installed, it shows a progress bar. 
+
+---
+
+## How to run
+
+From the directory containing `COF_CIFs/`:
+
+```bash
+python flp_batch_all_in_one_n1.py
+```
+
+---
+
+
+---
+
+## Two important notes
+
+1. **Why Voronoi nodes?**
+   The `.nt2` nodes represent local maxima in the distance field to the framework atoms (pore centers / channel centers). Using these nodes provides a topology-aware discretization of the pore space for pocket placement, rather than arbitrary grid sampling.
+
+2. **Why the four-factor quality score (Q)?**
+   It explicitly encodes the minimum requirements for an operational FLP site in a confined pore: viable separation window, correct base orientation, and accessibility of both reactant gases to the pocket region—then combines them multiplicatively to enforce joint satisfaction.
+
+(When you ask for the thesis text next, I’ll write this as a full Methods subsection with equations and definitions.)
+
+

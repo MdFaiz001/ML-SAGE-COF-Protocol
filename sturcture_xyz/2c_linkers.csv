@@ -1,0 +1,15 @@
+linker_id,name,xyz_file,smiles
+0,1_c_link,1_c_link.xyz,c1ccccc1
+1,2_c_link,2_c_link.xyz,c1ccc(cc1)c1ccccc1
+2,3_n_link,3_n_link.xyz,c1ccc(nc1)c1ccccn1
+3,4_n_link,4_n_link.xyz,c1ccc2c(n1)c1ncccc1cc2
+4,5_n_link,5_n_link.xyz,c1ccc2c(n1)c1ncccc1nn2
+5,7_n_link,7_n_link.xyz,C1=Cc2c(=N1)cc1c(=NC=C1)c2
+6,8_n_link,8_n_link.xyz,c1ccc2c(c1)nccn2
+7,9_n_link,9_n_link.xyz,c1ccc2c(c1)nc1c(n2)cccc1
+8,11_n_link,11_n_link.xyz,n1ccncc1
+9,12_n_link,12_n_link.xyz,c1ccncn1
+10,13_n_link,13_n_link.xyz,c1ccnnc1
+11,14_n_link,14_n_link.xyz,c1ccc2c(c1)cnnc2
+12,15_c_link,15_c_link.xyz,c1ccc2c(-c3ccccc3CC2)c1
+13,16_c_link,16_c_link.xyz,c1ccc2c(c1)cc1c(c2)cc2c(c1)cc1c(c2)cccc1

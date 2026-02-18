@@ -1,0 +1,10 @@
+linker_id,name,xyz_file,smiles
+0,1,1.xyz,c1ccc(cc1)c1ccc(cc1)/C/1=C/2\C=CC(=N2)/C(=c\2/cc/c(=C(/C3=N/C(=C(\c4[nH]c1cc4)/c1ccc(cc1)c1ccccc1)/C=C3)\c1ccc(cc1)c1ccccc1)/[nH]2)/c1ccc(cc1)c1ccccc1
+1,2,2.xyz,c1ccc(cc1)/C/1=C/2\C=CC(=N2)/C(=c\2/cc/c(=C(/C3=N/C(=C(\c4[nH]c1cc4)/c1ccccc1)/C=C3)\c1ccccc1)/[nH]2)/c1ccccc1
+2,3,3.xyz,c1ccc(cc1)c1ccccc1
+3,4,4.xyz,c1ccc2c(c1)C1(c3c(C2)cccc3)c2ccccc2Cc2c1cccc2
+4,5,5.xyz,c1ccc2-c3c(C4(c2c1)c1ccccc1-c1c4cccc1)cccc3
+5,6,6.xyz,c1cc2ccc3c4c2c(c1)ccc4ccc3
+6,7,7.xyz,c1ccc(cc1)C(c1ccccc1)(c1ccccc1)c1ccccc1
+7,8,8.xyz,C1[C@@H]2C[C@@H]3C[C@H]1C[C@H](C2)C3
+8,9,9.xyz,c1ccc(cc1)[Si](c1ccccc1)(c1ccccc1)c1ccccc1
