@@ -1,6 +1,4 @@
-Below is a **GitHub-ready, nothing-missed** documentation for **Code 2**: `new_generate_cofs_pormake_timed.py`. It includes **every input, output, folder, parameter, logic branch, logging file, resume behavior, timeout behavior, functionalization placement algorithm, and failure behavior**. 
 
----
 
 # `new_generate_cofs_pormake_timed.py` — COF builder (PORMAKE) with timed multiprocessing + functionalization placement + logs
 
